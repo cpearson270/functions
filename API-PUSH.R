@@ -19,72 +19,84 @@ if(any(!required_libs %in% (.packages()))){
 }
 rm(required_libs)
 
-api_key <- readLines('API/Key.txt', warn = FALSE)
-
-# initialise status record
-patch_status <- tibble(record=character()
-                       ,status_code=integer()
-                       ,status_desc=character()
-                       ,status_message=character())
-
-records <-  df %>% pull("@odata.id")
-
-#update_remark <- paste0(
-#  '[',
-#  initials,
-#  format(Sys.Date(),"%Y%m%d"),
-#  ']cas_rn updated from ',
-#  cas_rn_current)
-
-for (i in 1:length(records)) {
+api_odata_push <- function(df
+                          ,patch_data
+                          ,api_key_path = 'API/Key.txt') {
   
-  edit_url <- records[i]
+  api_key <- readLines(api_key_path, warn = FALSE)
   
-  # Encode the url
-  url_patch <- URLencode(edit_url)
+  # initialise status record
+  patch_status <- tibble(record=character()
+                         ,status_code=integer()
+                         ,status_desc=character()
+                         ,status_message=character())
   
-  # Prepare body
-#  patch_data <- list(
-#    cas_rn = cas_rn_updated,
-#    remark = if(is.na(df$REMARK[i]))
-#      update_remark
-#    else paste(update_remark,df$REMARK[i] ,sep = "; ")
-#  )
+  records <-  df %>% pull("@odata.id")
   
-  json_data <- toJSON(patch_data, auto_unbox = TRUE)
+  #update_remark <- paste0(
+  #  '[',
+  #  initials,
+  #  format(Sys.Date(),"%Y%m%d"),
+  #  ']cas_rn updated from ',
+  #  cas_rn_current)
   
-  # Make the PATCH request
-  response <- PATCH(
-    url_patch,
-    add_headers(
-      Authorization = paste("Bearer", api_key),
-      `Content-Type` = "application/json",
-      Accept = "application/json"
-    ),
-    body = json_data
-  )
-  
-  # Check the status of the response
-  #status_code(response)
-  
-  # Print the response content (if any)
-  content <- content(response, as = "text", encoding = "UTF-8")
-  
-  patch_status <- patch_status %>% 
-    add_row(record = paste(df[i,1],df[i,2],sep = ", ")
-            ,status_code = status_code(response)
-            ,status_desc = if (status_code(response) == "204") {
-              "Success."
-            } else if (status_code(response) == "400") {
-              "OData path not recognized."
-            } else if (status_code(response) == "401") {
-              "User credentials are required."
-            } else if (status_code(response) == "403") {
-              "Not authorized to perform this action."
-            } else if (status_code(response) == "404") {
-              "The given record does not exist and cannot be updated."
-            } else if (status_code(response) == "500") {
-              "Internal server error."
-            }
-            ,status_message = content)
+  for (record in records) {
+    
+    url_patch <- URLencode(record)
+    
+    # Prepare body
+  #  patch_data <- list(
+  #    cas_rn = cas_rn_updated,
+  #    remark = if(is.na(df$REMARK[i]))
+  #      update_remark
+  #    else paste(update_remark,df$REMARK[i] ,sep = "; ")
+  #  )
+    
+    json_data <- toJSON(patch_data, auto_unbox = TRUE)
+    
+    # Make the PATCH request
+    response <- PATCH(
+      url_patch,
+      add_headers(
+        Authorization = paste("Bearer", api_key),
+        `Content-Type` = "application/json",
+        Accept = "application/json"
+      ),
+      body = json_data
+    )
+    
+    # Print the response content (if any)
+    content <- content(response, as = "text", encoding = "UTF-8")
+    
+    patch_status <- patch_status %>% 
+      add_row(record = str_extract(record, "\\(.*?\\)")
+              ,status_code = status_code(response)
+              ,status_desc = if (status_code(response) == "204") {
+                "Success."
+              } else if (status_code(response) == "400") {
+                "OData path not recognized."
+              } else if (status_code(response) == "401") {
+                "User credentials are required."
+              } else if (status_code(response) == "403") {
+                "Not authorized to perform this action."
+              } else if (status_code(response) == "404") {
+                "The given record does not exist and cannot be updated."
+              } else if (status_code(response) == "500") {
+                "Internal server error."
+              }
+              ,status_message = content)
+    cat(format(Sys.time())
+        ,str_extract(record, "\\(.*?\\)")
+        ,paste0("status=",status_code(response))
+        ,"\n"
+        ,sep="; "
+        ,file = "outputs\\API_push_log.txt"
+        ,append=TRUE)
+  }
+  return(list(
+    status_detail = patch_status
+    ,status_sumary= patch_status %>% 
+      group_by(status_code,status_desc) %>% 
+      summarise(count=n())
+))
 }
