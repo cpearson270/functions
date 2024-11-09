@@ -16,7 +16,6 @@
 
 ## Load packages
 required_libs <- c("httr", "jsonlite")
-
 if(any(!required_libs %in% (.packages()))){
   load_libs <- dplyr::setdiff(required_libs, (.packages()))
   lapply(load_libs, library, character.only = TRUE)
@@ -24,67 +23,43 @@ if(any(!required_libs %in% (.packages()))){
 }
 rm(required_libs)
 
-api_key <- readLines('API/Key.txt', warn = FALSE)
+api_odata_get <- function(base_url
+                          ,query_table,query_filter,oderby
+                          ,api_key_path = 'API/Key.txt') {
 
-encoded_query <- URLencode(paste0(query_table,query_filter))
-
-# Complete the full URL with the encoded query string
-url <- paste0(base_url, encoded_query)
-
-# Make the GET request
-response <- GET(
-  url,
-  add_headers(Authorization = paste("Bearer", api_key))
-)
-
-# Check the status of the response
-status_code(response)
-
-# Parse the JSON content (assuming the response is in JSON format)
-if (status_code(response) == 200) {
-  data <- content(response, as = "text")
-  parsed_data <- fromJSON(data)
-  df <- parsed_data[["value"]]
-
-  # provide API error message
-} else {
-  error_message <- content(response, as = "text", encoding = "UTF-8")
-  print(error_message)
-}
-
-i<-0
-df_temp<-c(1)
-
-while (length(df_temp)>0) {
-  i<-i+1
-  query <- paste0(query_table
-                  ,query_filter
-                  ,"&$skip="
-                  ,i
-                  ,"000
-                    &$top=1000
-                    &$orderby="
-                  ,orderby)
-  encoded_query <- URLencode(query)
-  
-  # Complete the full URL with the encoded query string
-  url <- paste0(base_url, encoded_query)
-  
-  # Make the GET request
-  response <- GET(
-    url,
-    add_headers(Authorization = paste("Bearer", api_key))
-  )
-  
-  # Check the status of the response
-  status_code(response)
-  
-  # Parse the JSON content (assuming the response is in JSON format)
-  if (status_code(response) == 200) {
+  api_key <- readLines(api_key_path, warn = FALSE)
+  i <- -1
+  df <- data.frame()
+  repeat {
+    i <- i+1
+    query <- paste0(query_table
+                    ,query_filter
+                    ,"&$skip="
+                    ,i * 1000
+                    ,"&$top=1000
+                      &$orderby="
+                    ,orderby)
+    
+    url <- paste0(base_url, URLencode(query))
+    
+    response <- GET(
+      url,
+      add_headers(Authorization = paste("Bearer", api_key))
+    )
+    
+    if (status_code(response) != 200) {
+      print(content(response, as = "text", encoding = "UTF-8"))
+      break
+    }
+    
     data <- content(response, as = "text")
-    parsed_data <- fromJSON(data)
-    df_temp <- parsed_data[["value"]]
+    df_temp <- fromJSON(data)[["value"]]
+    
+    if (length(df_temp) == 0) {
+      break
+    }
+    
     df <- bind_rows(df, df_temp)
   }
+  return(df)
 }
-rm(df_temp)
